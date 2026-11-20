@@ -1,0 +1,45 @@
+# Input Clinical Seed Corpus Configuration
+# Each source entry generates corpus/por_source/{name}_normalizado.json
+# when normalized via scripts/normalize_corpora.py.
+# Only the 13 seed sources (12 open ClinText-SP collections + optional
+# train-only ACHS emergency seeds) are configured here to prevent any
+# downstream evaluation split from entering the pretraining seed pool.
+
+corpora:
+
+  # Open clinical seed sub-corpora from IIC/ClinText-SP (12 collections)
+  - repo_group: clintext_sp
+    loader: huggingface
+    repo: IIC/ClinText-SP
+    text_column: text
+    source_column: source
+    splits:
+      - name: atadolcc
+        include_sources: [atadolcc]
+      - name: adolescere
+        include_sources: [adolescere]
+      - name: cardioccc
+        include_sources: [cardioccc]
+      - name: reccmi
+        include_sources: [reccmi]
+      - name: cantemist
+        include_sources: [camtemist, cantemist]
+      - name: cares
+        include_sources: [CARES]
+      - name: chilean_waiting_list
+        include_sources: ["Chilean Waiting List"]
+      - name: e3c
+        include_sources: [e3c]
+      - name: jart
+        include_sources: [jart]
+      - name: livingner
+        include_sources: [livingner]
+      - name: meddoplace
+        include_sources: [meddoplace]
+      - name: spaccc
+        include_sources: [SPACCC-documents]
+
+  # Optional institutional occupational emergency seeds (train-only, no val/test overlap)
+  - name: achs_pseudo
+    loader: brat
+    file_path: ~/datasets/ACHS_pseudo_seeds

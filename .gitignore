@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+venv/
+.venv/
+
+# Environment & Secrets
+.env
+.env.local
+
+# Raw Corpora, Large Intermediate Files & Model Checkpoints
+corpus/
+corpus_gigante/
+data/
+models/
+runs/
+checkpoints/
+logs/
+hf_cache/
+wandb/
+
+# Model Weights
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Generated Outputs, Results & Figures (produced locally on execution)
+results/
+figures/
+*.vllm_pid

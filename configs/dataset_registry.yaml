@@ -1,0 +1,130 @@
+# Dataset catalog for local BRAT corpora, train-only generation seeds, and downstream benchmarks.
+# Consumed by scripts/dataset_registry.py and downstream evaluation scripts.
+
+datasets:
+  # --- Restricted / institutional corpora ---
+  carmen_i:
+    format: brat
+    path: ~/datasets/carmen/CARMEN-I/ann/masked/ner
+    split: {mode: auto, seed: 42}
+    evaluation: {task: ner}
+    generation: {seed_policy: excluded}
+
+  achs:
+    format: brat
+    path: ~/datasets/achs/masked_achs-privacy_corpus
+    split: {mode: auto, seed: 42, file: configs/splits/achs__seed42.json}
+    evaluation: {task: ner}
+    generation: {seed_policy: train}
+
+  achs_pseudo:
+    format: txt_dir
+    path: ~/datasets/ACHS_pseudo
+    split: {mode: none}
+    generation:
+      seed_policy: file:configs/seeds/achs_pseudo__train_only.json
+      style: normalize_case
+
+  # --- Open clinical seed corpora (IIC/ClinText-SP) ---
+  cantemist:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  meddoplace:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  livingner:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  spaccc:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  atadolcc:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  adolescere:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  cardioccc:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  reccmi:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  cares:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: cls}
+    generation: {seed_policy: all}
+
+  caresA:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: cls}
+    generation: {seed_policy: all}
+
+  caresC:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: cls}
+    generation: {seed_policy: all}
+
+  chilean_waiting_list:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  e3c:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  jart:
+    format: huggingface
+    repo: IIC/ClinText-SP
+    evaluation: {task: ner}
+    generation: {seed_policy: all}
+
+  # --- Additional public biomedical NER shared tasks ---
+  distemist:
+    format: huggingface
+    repo: IIC/distemist
+    evaluation: {task: ner}
+    generation: {seed_policy: excluded}
+
+  meddocan:
+    format: huggingface
+    repo: IIC/meddocan
+    evaluation: {task: ner}
+    generation: {seed_policy: excluded}
+
+  pharmaconer:
+    format: huggingface
+    repo: PlanTL-GOB-ES/pharmaconer
+    evaluation: {task: ner}
+    generation: {seed_policy: excluded}
