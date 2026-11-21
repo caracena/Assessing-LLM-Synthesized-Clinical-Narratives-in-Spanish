@@ -3,7 +3,7 @@
 Official replication repository for the paper **"Assessing LLM-Synthesized Clinical Narratives in Spanish"**.
 
 This repository contains the code and configurations required to reproduce the paper's pipeline:
-1. Downloading and normalizing the Spanish clinical seed corpora (`ClinText-SP`) and general biomedical web anchor (`CoWeSe`).
+1. Downloading and normalizing all 13 Spanish clinical seed corpora — the 12 open `ClinText-SP` collections (`30,955` seeds) plus the ACHS occupational emergency seed corpus `achs_pseudo` (`2,841` train-only normalized seeds; `33,796` candidate seeds in total) — alongside the general biomedical web anchor `CoWeSe` (`251,548` documents).
 2. Generating multi-density synthetic clinical narratives (`N = 1, 5, 10`) via vLLM (`Qwen/Qwen3-8B` and `Qwen/Qwen3.8-27B`) with intra-source RAG retrieval, SBERT semantic filtering, deduplication, and `CoWeSe` replay mixing.
 3. Continual Pre-Training (CPT) of `FacebookAI/xlm-roberta-large` using Masked Language Modeling (MLM).
 4. Downstream multi-seed fine-tuning and evaluation across 9 Spanish biomedical and clinical benchmarks (`ACHS`, `CARMEN-I`, `CANTEMIST`, `DisTEMIST`, `PharmaCoNER`, `MedDoCan`, `LivingNER1`, `CARES-A`, `CARES-C`) plus low-resource sample efficiency (`10%`, `25%`, `50%`, `100%`).
@@ -105,16 +105,23 @@ All 7 public downstream benchmarks are also fetched automatically from Hugging F
 - **NER**: `cantemist`, `distemist`, `pharmaconer`, `meddocan`, `livingner1`
 - **Classification**: `caresA`, `caresC`
 
-### 1.2 Restricted / Institutional Corpora (`CARMEN-I` & `ACHS`)
+### 1.2 Restricted / Institutional Corpora (`CARMEN-I` and the Two `ACHS` Corpora)
 
-Two evaluation corpora require credentialed or institutional data access and cannot be redistributed here:
-- **CARMEN-I**: Obtain through credentialed access on [PhysioNet](https://physionet.org/) and place the BRAT annotations under `~/datasets/carmen/CARMEN-I/ann/masked/ner` (or pass `--data-dir` to `finetune_eval.py`).
-- **ACHS**: Private occupational emergency corpus from *Asociacion Chilena de Seguridad*. When available locally under `~/datasets/achs/masked_achs-privacy_corpus` (downstream NER) and `~/datasets/ACHS_pseudo` (raw notes filtered strictly to train-only seeds via `configs/seeds/achs_pseudo__train_only.json`), materialize the quarantined generation seeds with:
-  ```bash
-  python scripts/dataset_registry.py --seeds achs_pseudo --out ~/datasets/ACHS_pseudo_seeds --style normalize_case
-  ```
+Three restricted institutional corpora are registered in `configs/dataset_registry.yaml` and cannot be redistributed here. In particular, the study uses **two distinct datasets from *Asociación Chilena de Seguridad* (ACHS)** across different stages of the pipeline (`achs_pseudo` for synthetic seed expansion in Steps 1–2 and `achs` for BRAT NER evaluation in Step 4), with explicit cross-corpus quarantine to prevent train/test leakage:
 
-If you do not have access to `CARMEN-I` or `ACHS`, all scripts in Steps 1–5 skip missing local restricted folders gracefully and run cleanly across the 12 public `ClinText-SP` seed sources and 7 public benchmarks.
+| Registry Key | Pipeline Role | Source / Citation | Local Path | Volume, Split & Anti-Leakage Quarantine |
+| :--- | :--- | :--- | :--- | :--- |
+| **`achs_pseudo`** | **Generation seeds** (Steps 1–2 only) | Aracena et al. (*ClinicalNLP@NAACL 2024*) | `~/datasets/ACHS_pseudo` | `2,869` de-identified plain-text reports (`1,486` `admission_*` + `1,383` `medical_*`). Because `122` `medical_*` notes map to the BRAT benchmark (`configs/seeds/achs_pseudo_to_masked_mapping.json`), `22` notes falling in downstream `val`/`test` splits are excluded via `configs/seeds/achs_pseudo__train_only.json` (`2,847` train-only files), and text normalization removes `6` empty/ultra-short notes → **`2,841` active normalized seeds**. Generates `28,376` (`27B`, `28,374` deduplicated) and `26,716` (`8B`, `26,714` deduplicated) synthetic notes at `N=10`, plus `2,816` authentic seeds (`>= 15` words) in the Appendix B control. |
+| **`achs`** | **Downstream NER benchmark** (Step 4 only) | Dunstan et al. (*BMC Med. Inform. Decis. Mak. 2024*) | `~/datasets/achs/masked_achs-privacy_corpus` | **`1,787` BRAT-annotated anamneses** (`.txt` + `.ann` across `Body_Part`, `Disease`, `Medication`, `First_Name`), evaluated strictly in Step 4 (`finetune_eval.py --dataset achs`) using the reproducible 80/10/10 split `configs/splits/achs__seed42.json` (**`1,429` train / `179` val / `179` test**) across 3 seeds and `10%–100%` sample efficiency curves. |
+| **`carmen_i`** | **Unseen external NER benchmark** (Step 4 only) | Lima-López et al. (2025), via [PhysioNet](https://physionet.org/) | `~/datasets/carmen/CARMEN-I/ann/masked/ner` | **`500` BRAT-annotated hospital EHR records** (`400` train / `50` val / `50` test per seed across 6 entity types; pass `--data-dir` to `finetune_eval.py` if unpacked inside a versioned PhysioNet directory). Completely excluded from seed generation and continual pre-training (`0` seeds). |
+
+When `~/datasets/ACHS_pseudo` is available locally, materialize the quarantined train-only generation seeds (`2,847` files) before running `normalize_corpora.py`:
+
+```bash
+python scripts/dataset_registry.py --seeds achs_pseudo --out ~/datasets/ACHS_pseudo_seeds --style normalize_case
+```
+
+If you do not have access to `CARMEN-I` or the two `ACHS` corpora, all scripts in Steps 1–5 skip missing local restricted folders gracefully and run cleanly across the 12 public `ClinText-SP` seed sources and 7 public benchmarks.
 
 ### 1.3 Normalize Seed Corpora
 
@@ -286,16 +293,18 @@ Or run each block individually:
 *(Note: On `--dataset achs`, `finetune_eval.py` defaults to `--split-file auto`, loading the fixed leak-free holdout in `configs/splits/achs__seed42.json` so `val`/`test` stay strictly quarantined across random seeds; pass `--split-file none` for per-seed shuffling. All downstream scripts write to a unified 12-column CSV schema.)*
 
 ```bash
-for SEED in 42 123 2024; do
-  python scripts/finetune_eval.py \
-    --base-model runs/clinical-synth-27b-n10/final \
-    --dataset carmen_i \
-    --epochs 15 \
-    --batch-size 16 \
-    --learning-rate 2e-5 \
-    --weight-decay 0.01 \
-    --seed ${SEED} \
-    --results-csv results/results_master_benchmark.csv
+for DATASET in carmen_i achs; do
+  for SEED in 42 123 2024; do
+    python scripts/finetune_eval.py \
+      --base-model runs/clinical-synth-27b-n10/final \
+      --dataset ${DATASET} \
+      --epochs 15 \
+      --batch-size 16 \
+      --learning-rate 2e-5 \
+      --weight-decay 0.01 \
+      --seed ${SEED} \
+      --results-csv results/results_master_benchmark.csv
+  done
 done
 ```
 
@@ -370,7 +379,7 @@ python scripts/analyze_clinical_novelty.py --dataset achs_pseudo --max-cases 300
 
 ### 5.3 Blinded Clinical Quality Evaluation with `TypeSafe Jev-1.13`
 
-Evaluates balanced synthetic clinical notes across four 5-point criteria (*Clinical Plausibility*, *Professional Medical Register*, *Internal Consistency*, and *Document Completeness*) and generates Figure 5 (`--per-source 10` samples `N=260`; `--per-source 200` samples `N=5,200`; unavailable restricted sources such as `achs_pseudo` are skipped automatically). `extract_geval_sample_5200.py` also supports single-generator sampling if only one model directory exists; paired `run_jev_eval.py` compares `8B` vs `27B`.
+Evaluates balanced synthetic clinical notes across four 5-point criteria (*Clinical Plausibility*, *Professional Medical Register*, *Internal Consistency*, and *Document Completeness*) and generates Figure 5 (`--per-source 10` samples `N=260`; `--per-source 200` samples `N=5,200`; unavailable restricted sources such as `achs_pseudo` are skipped automatically). Both `extract_geval_sample_5200.py` and `run_jev_eval.py` also support single-generator evaluation when only `8B` or only `27B` outputs are present, in addition to paired `8B` vs `27B` comparison.
 
 > **API Key Required:** Export `OPENROUTER_API_KEY` before running `run_jev_eval.py`.
 
