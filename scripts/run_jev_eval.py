@@ -281,10 +281,27 @@ def main():
     else:
         save_outputs(cached_by_id, ordered_ids)
 
+    def _mean_std(vals):
+        return (
+            float(np.mean(vals)),
+            float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0,
+        )
+
+    def _safe_ttest(vals_a, vals_b):
+        if len(vals_a) >= 2 and len(vals_b) >= 2:
+            t_stat, p_val = stats.ttest_ind(vals_a, vals_b)
+            return float(t_stat), float(p_val)
+        return float("nan"), float("nan")
+
     ordered_records = [cached_by_id[i] for i in ordered_ids]
     df = pd.DataFrame(ordered_records)
     df_8b = df[df["generator"] == "8B"].copy()
     df_27b = df[df["generator"] == "27B"].copy()
+
+    has_8b = len(df_8b) > 0
+    has_27b = len(df_27b) > 0
+    if not (has_8b or has_27b):
+        raise ValueError("No records found for generator '8B' or '27B'.")
 
     dimensions = [
         ("plausibilidad_clinica", "Clinical Plausibility"),
@@ -293,154 +310,238 @@ def main():
         ("completitud_documental", "Document Completeness"),
     ]
     dim_cols = [d[0] for d in dimensions]
-
-    summary_rows = []
-    print("\n" + "=" * 75)
-    print(f"JEV-1.13 BLINDED EVALUATION SUMMARY [N={len(df)}]")
-    print("=" * 75)
-
-    for col, name in dimensions:
-        vals_8b = df_8b[col].values
-        vals_27b = df_27b[col].values
-
-        mean_8b, std_8b = float(np.mean(vals_8b)), float(np.std(vals_8b, ddof=1))
-        mean_27b, std_27b = float(np.mean(vals_27b)), float(np.std(vals_27b, ddof=1))
-        delta = mean_27b - mean_8b
-        t_stat, p_val = stats.ttest_ind(vals_27b, vals_8b)
-
-        print(f"\nDimension: {name}")
-        print(f"  Qwen-3-8B (N={len(vals_8b)}):    {mean_8b:.3f} ± {std_8b:.3f}")
-        print(f"  Qwen-3.8-27B (N={len(vals_27b)}): {mean_27b:.3f} ± {std_27b:.3f}")
-        print(
-            f"  Delta 27B: {delta:+.3f} pts | t={t_stat:.3f}, p={p_val:.4e} "
-            f"{'*' if p_val < 0.05 else ''}"
-        )
-
-        summary_rows.append({
-            "Dimension": name,
-            "8B_Mean": round(mean_8b, 3),
-            "8B_Std": round(std_8b, 3),
-            "27B_Mean": round(mean_27b, 3),
-            "27B_Std": round(std_27b, 3),
-            "Delta_27B": round(delta, 3),
-            "t_stat": round(float(t_stat), 3),
-            "p_value": float(f"{p_val:.4e}"),
-            "Significant": "Yes" if p_val < 0.05 else "No",
-        })
-
-    # Overall mean clinical score across all 4 rubric dimensions
-    overall_8b = df_8b[dim_cols].mean(axis=1).values
-    overall_27b = df_27b[dim_cols].mean(axis=1).values
-    o_mean_8b, o_std_8b = float(np.mean(overall_8b)), float(np.std(overall_8b, ddof=1))
-    o_mean_27b, o_std_27b = float(np.mean(overall_27b)), float(np.std(overall_27b, ddof=1))
-    o_t, o_p = stats.ttest_ind(overall_27b, overall_8b)
-
-    print("\nDimension: Overall Clinical Score")
-    print(f"  Qwen-3-8B (N={len(overall_8b)}):    {o_mean_8b:.3f} ± {o_std_8b:.3f}")
-    print(f"  Qwen-3.8-27B (N={len(overall_27b)}): {o_mean_27b:.3f} ± {o_std_27b:.3f}")
-    print(f"  Delta 27B: {o_mean_27b - o_mean_8b:+.3f} pts | t={o_t:.3f}, p={o_p:.4e}")
-
-    summary_rows.append({
-        "Dimension": "Overall Clinical Score",
-        "8B_Mean": round(o_mean_8b, 3),
-        "8B_Std": round(o_std_8b, 3),
-        "27B_Mean": round(o_mean_27b, 3),
-        "27B_Std": round(o_std_27b, 3),
-        "Delta_27B": round(o_mean_27b - o_mean_8b, 3),
-        "t_stat": round(float(o_t), 3),
-        "p_value": float(f"{o_p:.4e}"),
-        "Significant": "Yes" if o_p < 0.05 else "No",
-    })
-
-    df_summary = pd.DataFrame(summary_rows)
-    df_summary.to_csv("results/jev_eval_summary.csv", index=False)
-
-    with open("figures/jev_eval_report.txt", "w", encoding="utf-8") as f:
-        f.write(
-            f"BLINDED CLINICAL EVALUATION REPORT "
-            f"(TypeSafe Jev-1.13, N={len(df)})\n"
-        )
-        f.write("=" * 72 + "\n\n")
-        f.write(df_summary.to_string(index=False))
-        f.write(f"\n\nNew API call cost: ${total_cost:.5f} USD | Failures: {failed_count}\n")
-        f.write("\nKEY SUMMARY:\n")
-        f.write(
-            "1. Structured Decision Model: TypeSafe Jev-1.13 provides directly "
-            "calibrated probabilistic rubric scores.\n"
-        )
-        f.write(
-            f"2. Clinical Plausibility: 27B ({df_summary.loc[0, '27B_Mean']:.2f}) "
-            f"significantly outperforms 8B ({df_summary.loc[0, '8B_Mean']:.2f}) "
-            f"(p = {df_summary.loc[0, 'p_value']:.4e}).\n"
-        )
-        f.write(
-            f"3. Professional Register: 27B achieves {df_summary.loc[1, '27B_Mean']:.2f} "
-            f"vs {df_summary.loc[1, '8B_Mean']:.2f} (p = {df_summary.loc[1, 'p_value']:.4e}).\n"
-        )
-
-    print("\nGenerating Figure 5: Clinical Quality Comparison (TypeSafe Jev-1.13)...")
-    fig, ax = plt.subplots(figsize=(8.5, 4.8))
-
     dim_labels = [
         "Clinical\nPlausibility",
         "Professional\nRegister",
         "Internal\nConsistency",
         "Document\nCompleteness",
     ]
-    means_8b = [df_8b[k].mean() for k in dim_cols]
-    stds_8b = [df_8b[k].std(ddof=1) for k in dim_cols]
-    means_27b = [df_27b[k].mean() for k in dim_cols]
-    stds_27b = [df_27b[k].std(ddof=1) for k in dim_cols]
 
+    summary_rows = []
+    print("\n" + "=" * 75)
+    print(f"JEV-1.13 BLINDED EVALUATION SUMMARY [N={len(df)}]")
+    print("=" * 75)
+
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
     x = np.arange(len(dim_labels))
-    w = 0.35
 
-    bars1 = ax.bar(
-        x - w / 2,
-        means_8b,
-        yerr=stds_8b,
-        capsize=4,
-        width=w,
-        label="Qwen-3-8B Generator",
-        color="#2b5c8f",
-        edgecolor="black",
-        alpha=0.9,
-    )
-    bars2 = ax.bar(
-        x + w / 2,
-        means_27b,
-        yerr=stds_27b,
-        capsize=4,
-        width=w,
-        label="Qwen-3.8-27B Generator",
-        color="#d95f02",
-        edgecolor="black",
-        alpha=0.9,
-    )
+    if has_8b and has_27b:
+        for col, name in dimensions:
+            vals_8b = df_8b[col].values
+            vals_27b = df_27b[col].values
 
-    for bar, val in zip(bars1, means_8b):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() - 0.45,
-            f"{val:.2f}",
-            ha="center",
-            va="top",
-            color="white",
-            fontweight="bold",
-            fontsize=9.5,
+            mean_8b, std_8b = _mean_std(vals_8b)
+            mean_27b, std_27b = _mean_std(vals_27b)
+            delta = mean_27b - mean_8b
+            t_stat, p_val = _safe_ttest(vals_27b, vals_8b)
+            is_sig = (not np.isnan(p_val)) and (p_val < 0.05)
+
+            print(f"\nDimension: {name}")
+            print(f"  Qwen-3-8B (N={len(vals_8b)}):    {mean_8b:.3f} ± {std_8b:.3f}")
+            print(f"  Qwen-3.8-27B (N={len(vals_27b)}): {mean_27b:.3f} ± {std_27b:.3f}")
+            print(
+                f"  Delta 27B: {delta:+.3f} pts | t={t_stat:.3f}, p={p_val:.4e} "
+                f"{'*' if is_sig else ''}"
+            )
+
+            summary_rows.append({
+                "Dimension": name,
+                "8B_Mean": round(mean_8b, 3),
+                "8B_Std": round(std_8b, 3),
+                "27B_Mean": round(mean_27b, 3),
+                "27B_Std": round(std_27b, 3),
+                "Delta_27B": round(delta, 3),
+                "t_stat": round(t_stat, 3) if not np.isnan(t_stat) else np.nan,
+                "p_value": float(f"{p_val:.4e}") if not np.isnan(p_val) else np.nan,
+                "Significant": "Yes" if is_sig else "No",
+            })
+
+        overall_8b = df_8b[dim_cols].mean(axis=1).values
+        overall_27b = df_27b[dim_cols].mean(axis=1).values
+        o_mean_8b, o_std_8b = _mean_std(overall_8b)
+        o_mean_27b, o_std_27b = _mean_std(overall_27b)
+        o_delta = o_mean_27b - o_mean_8b
+        o_t, o_p = _safe_ttest(overall_27b, overall_8b)
+        o_sig = (not np.isnan(o_p)) and (o_p < 0.05)
+
+        print("\nDimension: Overall Clinical Score")
+        print(f"  Qwen-3-8B (N={len(overall_8b)}):    {o_mean_8b:.3f} ± {o_std_8b:.3f}")
+        print(f"  Qwen-3.8-27B (N={len(overall_27b)}): {o_mean_27b:.3f} ± {o_std_27b:.3f}")
+        print(f"  Delta 27B: {o_delta:+.3f} pts | t={o_t:.3f}, p={o_p:.4e}")
+
+        summary_rows.append({
+            "Dimension": "Overall Clinical Score",
+            "8B_Mean": round(o_mean_8b, 3),
+            "8B_Std": round(o_std_8b, 3),
+            "27B_Mean": round(o_mean_27b, 3),
+            "27B_Std": round(o_std_27b, 3),
+            "Delta_27B": round(o_delta, 3),
+            "t_stat": round(o_t, 3) if not np.isnan(o_t) else np.nan,
+            "p_value": float(f"{o_p:.4e}") if not np.isnan(o_p) else np.nan,
+            "Significant": "Yes" if o_sig else "No",
+        })
+
+        df_summary = pd.DataFrame(summary_rows)
+        df_summary.to_csv("results/jev_eval_summary.csv", index=False)
+
+        with open("figures/jev_eval_report.txt", "w", encoding="utf-8") as f:
+            f.write(
+                f"BLINDED CLINICAL EVALUATION REPORT "
+                f"(TypeSafe Jev-1.13, N={len(df)})\n"
+            )
+            f.write("=" * 72 + "\n\n")
+            f.write(df_summary.to_string(index=False))
+            f.write(f"\n\nNew API call cost: ${total_cost:.5f} USD | Failures: {failed_count}\n")
+            f.write("\nKEY SUMMARY:\n")
+            f.write(
+                "1. Structured Decision Model: TypeSafe Jev-1.13 provides directly "
+                "calibrated probabilistic rubric scores.\n"
+            )
+            for idx, (row_idx, label) in enumerate(
+                [(0, "Clinical Plausibility"), (1, "Professional Register"), (4, "Overall Clinical Score")],
+                start=2,
+            ):
+                row = df_summary.loc[row_idx]
+                sig_flag = "p < 0.05" if row["Significant"] == "Yes" else "p >= 0.05"
+                f.write(
+                    f"{idx}. {label}: 27B achieved {row['27B_Mean']:.3f} vs "
+                    f"8B {row['8B_Mean']:.3f} (Delta = {row['Delta_27B']:+.3f} pts, "
+                    f"p = {row['p_value']:.4e}, {sig_flag}).\n"
+                )
+
+        print("\nGenerating Figure 5: Clinical Quality Comparison (TypeSafe Jev-1.13)...")
+        stats_8b = [_mean_std(df_8b[k].values) for k in dim_cols]
+        stats_27b = [_mean_std(df_27b[k].values) for k in dim_cols]
+        means_8b = [m for m, _ in stats_8b]
+        stds_8b = [s for _, s in stats_8b]
+        means_27b = [m for m, _ in stats_27b]
+        stds_27b = [s for _, s in stats_27b]
+
+        w = 0.35
+        bars1 = ax.bar(
+            x - w / 2,
+            means_8b,
+            yerr=stds_8b,
+            capsize=4,
+            width=w,
+            label="Qwen-3-8B Generator",
+            color="#2b5c8f",
+            edgecolor="black",
+            alpha=0.9,
+        )
+        bars2 = ax.bar(
+            x + w / 2,
+            means_27b,
+            yerr=stds_27b,
+            capsize=4,
+            width=w,
+            label="Qwen-3.8-27B Generator",
+            color="#d95f02",
+            edgecolor="black",
+            alpha=0.9,
         )
 
-    for bar, val in zip(bars2, means_27b):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() - 0.45,
-            f"{val:.2f}",
-            ha="center",
-            va="top",
-            color="white",
-            fontweight="bold",
-            fontsize=9.5,
+        for bars, means in ((bars1, means_8b), (bars2, means_27b)):
+            for bar, val in zip(bars, means):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    max(1.15, val - 0.45),
+                    f"{val:.2f}",
+                    ha="center",
+                    va="top",
+                    color="white",
+                    fontweight="bold",
+                    fontsize=9.5,
+                )
+    else:
+        gen_key = "8B" if has_8b else "27B"
+        gen_label = "Qwen-3-8B" if has_8b else "Qwen-3.8-27B"
+        gen_color = "#2b5c8f" if has_8b else "#d95f02"
+        df_single = df_8b if has_8b else df_27b
+
+        print(
+            f"[INFO] Single-generator mode ({gen_label} only; "
+            f"paired 8B vs 27B comparison skipped)."
         )
+
+        for col, name in dimensions:
+            vals = df_single[col].values
+            mean_val, std_val = _mean_std(vals)
+            print(f"\nDimension: {name}")
+            print(f"  {gen_label} (N={len(vals)}): {mean_val:.3f} ± {std_val:.3f}")
+            summary_rows.append({
+                "Dimension": name,
+                "Generator": gen_key,
+                "N": len(vals),
+                "Mean": round(mean_val, 3),
+                "Std": round(std_val, 3),
+            })
+
+        overall_vals = df_single[dim_cols].mean(axis=1).values
+        o_mean, o_std = _mean_std(overall_vals)
+        print("\nDimension: Overall Clinical Score")
+        print(f"  {gen_label} (N={len(overall_vals)}): {o_mean:.3f} ± {o_std:.3f}")
+        summary_rows.append({
+            "Dimension": "Overall Clinical Score",
+            "Generator": gen_key,
+            "N": len(overall_vals),
+            "Mean": round(o_mean, 3),
+            "Std": round(o_std, 3),
+        })
+
+        df_summary = pd.DataFrame(summary_rows)
+        df_summary.to_csv("results/jev_eval_summary.csv", index=False)
+
+        with open("figures/jev_eval_report.txt", "w", encoding="utf-8") as f:
+            f.write(
+                f"BLINDED CLINICAL EVALUATION REPORT "
+                f"(TypeSafe Jev-1.13, Single-Generator {gen_label}, N={len(df_single)})\n"
+            )
+            f.write("=" * 72 + "\n\n")
+            f.write(df_summary.to_string(index=False))
+            f.write(f"\n\nNew API call cost: ${total_cost:.5f} USD | Failures: {failed_count}\n")
+            f.write("\nKEY SUMMARY:\n")
+            f.write(
+                "1. Structured Decision Model: TypeSafe Jev-1.13 provides directly "
+                "calibrated probabilistic rubric scores.\n"
+            )
+            f.write(
+                f"2. Overall Clinical Score ({gen_label}, N={len(overall_vals)}): "
+                f"{o_mean:.3f} ± {o_std:.3f}.\n"
+            )
+            f.write(
+                f"3. Highest Dimension: {df_summary.iloc[:4].sort_values('Mean', ascending=False).iloc[0]['Dimension']} "
+                f"({df_summary.iloc[:4]['Mean'].max():.3f}); Paired 8B vs 27B comparison skipped in single-generator mode.\n"
+            )
+
+        print("\nGenerating Figure 5: Clinical Quality Profile (TypeSafe Jev-1.13)...")
+        stats_single = [_mean_std(df_single[k].values) for k in dim_cols]
+        means_single = [m for m, _ in stats_single]
+        stds_single = [s for _, s in stats_single]
+
+        w = 0.5
+        bars = ax.bar(
+            x,
+            means_single,
+            yerr=stds_single,
+            capsize=4,
+            width=w,
+            label=f"{gen_label} Generator",
+            color=gen_color,
+            edgecolor="black",
+            alpha=0.9,
+        )
+        for bar, val in zip(bars, means_single):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                max(1.15, val - 0.35),
+                f"{val:.2f}",
+                ha="center",
+                va="top",
+                color="white",
+                fontweight="bold",
+                fontsize=9.5,
+            )
 
     ax.set_title(
         f"Clinical Quality Assessment (TypeSafe Jev-1.13 Decision Model, N={len(samples):,})",
