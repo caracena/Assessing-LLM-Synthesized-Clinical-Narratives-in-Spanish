@@ -36,57 +36,57 @@ plt.rcParams.update({
     "savefig.bbox": "tight",
 })
 
-# Canonical manuscript multi-seed benchmark scores (Seeds 42, 123, 2024; Table 2 & Appendix B)
+# Canonical manuscript multi-seed benchmark scores (Seeds 42, 123, 2024, 777, 1337; Table 2 & Appendix B)
 # Evaluated with exact CRLF-preserving BRAT offsets, sliding-window full-document reconstruction,
 # fixed CARMEN-I split (400/50/50), and zero-leakage quarantined ACHS val/test split (1429/179/179).
 PAPER_MULTISEED = {
     "RigoBERTa-Clinical": {
-        "achs": np.array([0.7840, 0.7783, 0.7841]),
-        "carmen_i": np.array([0.7617, 0.7591, 0.7442]),
+        "achs": np.array([0.7840, 0.7783, 0.7841, 0.7875, 0.7643]),
+        "carmen_i": np.array([0.7617, 0.7591, 0.7442, 0.7638, 0.7481]),
     },
     "Control (XLM-R Large)": {
-        "achs": np.array([0.7768, 0.7646, 0.7638]),
-        "carmen_i": np.array([0.7525, 0.7682, 0.7581]),
+        "achs": np.array([0.7768, 0.7646, 0.7638, 0.7706, 0.7726]),
+        "carmen_i": np.array([0.7525, 0.7682, 0.7581, 0.7600, 0.7478]),
     },
     "CLIN-X-ES": {
-        "achs": np.array([0.7721, 0.7708, 0.7742]),
-        "carmen_i": np.array([0.7798, 0.7729, 0.7717]),
+        "achs": np.array([0.7721, 0.7708, 0.7742, 0.7733, 0.7730]),
+        "carmen_i": np.array([0.7798, 0.7729, 0.7717, 0.7723, 0.7738]),
     },
     "CoWeSe Baseline": {
-        "achs": np.array([0.7802, 0.7833, 0.7886]),
-        "carmen_i": np.array([0.7769, 0.7684, 0.7680]),
+        "achs": np.array([0.7802, 0.7833, 0.7886, 0.7859, 0.7800]),
+        "carmen_i": np.array([0.7769, 0.7684, 0.7680, 0.7677, 0.7629]),
     },
     "Real Seeds Control": {
-        "achs": np.array([0.7708, 0.7908, 0.7871]),
-        "carmen_i": np.array([0.7575, 0.7599, 0.7630]),
+        "achs": np.array([0.7708, 0.7908, 0.7871, 0.7945, 0.7843]),
+        "carmen_i": np.array([0.7575, 0.7599, 0.7630, 0.7752, 0.7840]),
     },
     "8B (N=1)": {
-        "achs": np.array([0.7818, 0.7697, 0.7816]),
-        "carmen_i": np.array([0.7722, 0.7764, 0.7714]),
+        "achs": np.array([0.7818, 0.7697, 0.7816, 0.7830, 0.7809]),
+        "carmen_i": np.array([0.7722, 0.7764, 0.7714, 0.7704, 0.7668]),
     },
     "8B (N=5)": {
-        "achs": np.array([0.7792, 0.7806, 0.7807]),
-        "carmen_i": np.array([0.7702, 0.7790, 0.7644]),
+        "achs": np.array([0.7792, 0.7806, 0.7807, 0.7965, 0.7832]),
+        "carmen_i": np.array([0.7702, 0.7790, 0.7644, 0.7769, 0.7642]),
     },
     "Flagship 8B (N=10)": {
-        "achs": np.array([0.7713, 0.7815, 0.7892]),
-        "carmen_i": np.array([0.7757, 0.7691, 0.7836]),
+        "achs": np.array([0.7713, 0.7815, 0.7892, 0.7859, 0.7838]),
+        "carmen_i": np.array([0.7757, 0.7691, 0.7836, 0.7838, 0.7782]),
     },
     "27B (N=1)": {
-        "achs": np.array([0.7857, 0.7809, 0.7841]),
-        "carmen_i": np.array([0.7611, 0.7617, 0.7750]),
+        "achs": np.array([0.7857, 0.7809, 0.7841, 0.7845, 0.7961]),
+        "carmen_i": np.array([0.7611, 0.7617, 0.7750, 0.7813, 0.7816]),
     },
     "27B (N=5)": {
-        "achs": np.array([0.7833, 0.7809, 0.7781]),
-        "carmen_i": np.array([0.7822, 0.7797, 0.7720]),
+        "achs": np.array([0.7833, 0.7809, 0.7781, 0.7808, 0.7829]),
+        "carmen_i": np.array([0.7822, 0.7797, 0.7720, 0.7775, 0.7700]),
     },
     "Pure-Synth 27B": {
-        "achs": np.array([0.7689, 0.7759, 0.7856]),
-        "carmen_i": np.array([0.7767, 0.7724, 0.7768]),
+        "achs": np.array([0.7689, 0.7759, 0.7856, 0.7902, 0.7875]),
+        "carmen_i": np.array([0.7767, 0.7724, 0.7768, 0.7794, 0.7747]),
     },
     "Flagship 27B (N=10)": {
-        "achs": np.array([0.7815, 0.7826, 0.7849]),
-        "carmen_i": np.array([0.7835, 0.7719, 0.7837]),
+        "achs": np.array([0.7815, 0.7826, 0.7849, 0.7826, 0.7928]),
+        "carmen_i": np.array([0.7835, 0.7719, 0.7837, 0.7899, 0.7754]),
     },
 }
 
@@ -119,10 +119,10 @@ MODEL_ALIASES = {
 
 
 def load_multiseed_from_csv(csv_path: str, target_model: str = None):
-    """Load evaluated Step 4 CSV metrics, overriding multi-seed arrays when complete 3-seed ACHS+CARMEN-I data exists."""
+    """Load evaluated Step 4 CSV metrics, overriding multi-seed arrays when complete 5-seed ACHS+CARMEN-I data exists."""
     df = pd.read_csv(csv_path)
     data = {k: {ds: v.copy() for ds, v in d.items()} for k, d in PAPER_MULTISEED.items()}
-    target_seeds = [42, 123, 2024]
+    target_seeds = [42, 123, 2024, 777, 1337]
 
     if "train_fraction" in df.columns:
         frac = pd.to_numeric(df["train_fraction"], errors="coerce").fillna(1.0)
@@ -136,8 +136,10 @@ def load_multiseed_from_csv(csv_path: str, target_model: str = None):
         mapped = MODEL_ALIASES.get(raw_label, raw_label)
         entry = {}
         for ds in ("achs", "carmen_i"):
-            ds_rows = sub[(sub["dataset"] == ds) & (sub["seed"].isin(target_seeds))].sort_values("seed")
-            if len(ds_rows) == 3:
+            ds_rows = sub[(sub["dataset"] == ds) & (sub["seed"].isin(target_seeds))].copy()
+            if len(ds_rows) == len(target_seeds):
+                ds_rows["_order"] = ds_rows["seed"].map({s: i for i, s in enumerate(target_seeds)})
+                ds_rows = ds_rows.sort_values("_order")
                 entry[ds] = ds_rows["f1"].astype(float).values
         if "achs" in entry and "carmen_i" in entry:
             data[mapped] = entry
@@ -218,7 +220,7 @@ def main():
             print(f"[INFO] Using CSV target model '{selected_target}' for paired multi-seed significance & figures.")
         else:
             print(
-                "[INFO] Step 4 CSV lacks complete 3-seed (42, 123, 2024) ACHS+CARMEN-I records for target comparison; "
+                "[INFO] Step 4 CSV lacks complete 5-seed (42, 123, 2024, 777, 1337) ACHS+CARMEN-I records for target comparison; "
                 "using manuscript multi-seed tables for paired t-tests alongside the evaluated Step 4 CSV summary below."
             )
     else:
@@ -230,6 +232,8 @@ def main():
         ("RigoBERTa-Clinical", "RigoBERTa-Clinical"),
         ("CLIN-X-ES", "CLIN-X-ES"),
         ("Control (XLM-R Large)", "Control (XLM-R Large)"),
+        ("CoWeSe Baseline", "CoWeSe Baseline"),
+        ("Pure-Synth 27B", "Pure-Synth 27B"),
         ("Flagship 8B (N=10)", "Flagship 8B (N=10)"),
         ("Real Seeds Control", "Real Seeds Control (Appendix B)"),
     ]
@@ -239,14 +243,16 @@ def main():
         "achs": "ACHS (Occupational Emergency)",
     }
 
+    n_seeds = len(flagship_27b["carmen_i"])
+    df_t = n_seeds - 1
     print("=" * 75)
-    print("STATISTICAL SIGNIFICANCE ANALYSIS (MULTI-SEED SEEDS: 42, 123, 2024)")
+    print(f"STATISTICAL SIGNIFICANCE ANALYSIS ({n_seeds} SEEDS: 42, 123, 2024, 777, 1337; df={df_t})")
     print("=" * 75)
 
     # Collect the 6 planned primary contrasts for Holm-Bonferroni check (Table 10)
     planned_contrasts = []
     report_lines = [
-        f"STATISTICAL SIGNIFICANCE REPORT (TWO-TAILED PAIRED T-TEST, df=2; target={flagship_label})",
+        f"STATISTICAL SIGNIFICANCE REPORT (TWO-TAILED PAIRED T-TEST, n={n_seeds}, df={df_t}; target={flagship_label})",
         "============================================================================",
         "",
     ]
@@ -326,7 +332,10 @@ def main():
         ax.set_xticks(n_vals)
         ax.set_xticklabels(["$N=1$\n(33k docs)", "$N=5$\n(167k docs)", "$N=10$\n(334k docs)"])
         ax.grid(True, linestyle="--", alpha=0.5)
-        ax.legend(frameon=True, loc="lower right")
+        if ds == "achs":
+            ax.legend(frameon=True, framealpha=0.95, loc="lower right")
+        else:
+            ax.legend(frameon=True, framealpha=0.95, loc="lower right", bbox_to_anchor=(0.99, 0.15))
 
     plt.tight_layout()
     fig.savefig(os.path.join(args.fig_dir, "fig1_density_scaling.pdf"))
@@ -358,7 +367,7 @@ def main():
         ax.scatter(x, peaks, color="darkred", marker="D", s=30, zorder=5, label="Peak $F_1$")
 
         ymin = min(min(means) - 0.035, 0.72)
-        ymax = max(max(peaks) + 0.018, 0.805)
+        ymax = max(max(peaks) + 0.018, 0.812)
         for bar, mean_val in zip(bars, means):
             ax.text(
                 bar.get_x() + bar.get_width() / 2,

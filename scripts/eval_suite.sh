@@ -38,12 +38,12 @@ sys.exit(1)
 PYEOF
 }
 
-# 1. Target Clinical BRAT NER Benchmarks (Seeds: 42, 123, 2024; 15 epochs)
+# 1. Target Clinical BRAT NER Benchmarks (Seeds: 42, 123, 2024, 777, 1337; 15 epochs)
 ACHS_DIR="$HOME/datasets/achs/masked_achs-privacy_corpus"
 CARMEN_DIR="$HOME/datasets/carmen/CARMEN-I/ann/masked/ner"
 
-echo "[1/3] Target clinical BRAT NER benchmarks (multi-seed 42, 123, 2024)..."
-for SEED in 42 123 2024; do
+echo "[1/3] Target clinical BRAT NER benchmarks (multi-seed 42, 123, 2024, 777, 1337)..."
+for SEED in 42 123 2024 777 1337; do
     if [ -d "$ACHS_DIR" ]; then
         if is_done "achs" "$SEED"; then
             echo "  [SKIP] ACHS (Seed $SEED) already logged."

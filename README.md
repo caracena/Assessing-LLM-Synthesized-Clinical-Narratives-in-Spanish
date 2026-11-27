@@ -289,13 +289,13 @@ bash scripts/eval_suite.sh runs/clinical-synth-27b-n10/final results/results_mas
 
 Or run each block individually:
 
-### 4.1 Target Clinical NER Benchmarks (`ACHS`, `CARMEN-I` — Multi-Seed `42, 123, 2024`)
+### 4.1 Target Clinical NER Benchmarks (`ACHS`, `CARMEN-I` — Multi-Seed `42, 123, 2024, 777, 1337`)
 
 *(Note: `finetune_eval.py` preserves exact CRLF BRAT character offsets (`newline=""`), applies sliding-window tokenization (`--max-length 512 --stride 128`) with non-overlapping document-level BIO reconstruction so long EHR narratives are never truncated, and defaults to `--split-file auto`, loading the fixed splits in `configs/splits/achs__seed42.json` and `configs/splits/carmen_i__seed42.json` across seeds. All downstream scripts write to a unified 12-column CSV schema.)*
 
 ```bash
 for DATASET in carmen_i achs; do
-  for SEED in 42 123 2024; do
+  for SEED in 42 123 2024 777 1337; do
     python scripts/finetune_eval.py \
       --base-model runs/clinical-synth-27b-n10/final \
       --dataset ${DATASET} \
