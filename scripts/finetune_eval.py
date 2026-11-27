@@ -1,8 +1,9 @@
 """Fine-tune and evaluate NER encoders on local BRAT standoff datasets (CARMEN-I and ACHS).
 
-Performs a deterministic 80/10/10 document split by seed, converts BRAT character
-spans to subword BIO labels, fine-tunes token classification, and logs entity-level
-seqeval F1 metrics.
+Loads BRAT documents preserving exact character offsets (newline=""), applies
+sliding-window tokenization with non-overlapping document-level evaluation
+reconstruction (preventing truncation of long EHRs), uses fixed leak-free splits
+when available, fine-tunes token classification, and logs entity-level seqeval F1.
 
 Usage:
   python scripts/finetune_eval.py \
@@ -18,6 +19,7 @@ import glob
 import json
 import os
 import random
+import shutil
 from datetime import datetime
 
 import numpy as np
@@ -67,7 +69,7 @@ def parse_brat_ann(ann_path):
     spans = []
     with open(ann_path, encoding="utf-8") as f:
         for line in f:
-            line = line.rstrip("\n")
+            line = line.rstrip("\r\n")
             if not line or line.startswith("#"):
                 continue
             parts = line.split("\t")
@@ -83,17 +85,18 @@ def parse_brat_ann(ann_path):
             except (ValueError, IndexError):
                 continue
             spans.append((start, end, typ))
-    spans.sort(key=lambda x: x[0])
+    spans.sort(key=lambda x: (x[0], -(x[1] - x[0])))
     return spans
 
 
 def load_brat_docs(ann_dir):
+    """Load BRAT .txt/.ann pairs with newline='' to preserve exact CRLF character offsets."""
     docs = []
     for ann_path in sorted(glob.glob(os.path.join(ann_dir, "*.ann"))):
         txt_path = ann_path[: -len(".ann")] + ".txt"
         if not os.path.exists(txt_path):
             continue
-        with open(txt_path, encoding="utf-8") as f:
+        with open(txt_path, encoding="utf-8", newline="") as f:
             text = f.read()
         docs.append({
             "name": os.path.basename(txt_path),
@@ -103,34 +106,150 @@ def load_brat_docs(ann_dir):
     return docs
 
 
-def encode_doc(doc, tokenizer, max_length, label2id):
-    """Convert document text and character-offset spans into subword token BIO tags."""
-    enc = tokenizer(
+def encode_doc_windows(doc, doc_idx, tokenizer, max_length, stride, label2id, is_eval=False):
+    """Convert a document and BRAT spans into manual sliding-window subword BIO encodings.
+
+    Tokenizes the full untrimmed document once (avoiding HuggingFace fast-tokenizer
+    overflow truncation quirks), labels all tokens, and slices overlapping windows of
+    up to max_length tokens. During evaluation (is_eval=True), overlapping tokens are
+    masked to -100 outside each window's owned token span so every token and entity
+    in the full document is scored exactly once without boundary splits.
+    """
+    enc_full = tokenizer(
         doc["text"],
-        truncation=True,
-        max_length=max_length,
+        truncation=False,
+        add_special_tokens=False,
         return_offsets_mapping=True,
     )
-    offsets = enc.pop("offset_mapping")
-    labels = []
+    full_ids = enc_full["input_ids"]
+    full_offsets = enc_full["offset_mapping"]
+    spans = doc["spans"]
+
+    # Assign BIO labels once across the full untrimmed token sequence
+    full_labels = []
     open_entity = None
-    for ts, te in offsets:
-        if ts == te == 0:
-            labels.append(-100)
+    span_idx = 0
+    n_spans = len(spans)
+    for ts, te in full_offsets:
+        if ts == te:
+            full_labels.append(-100)
             continue
         if open_entity is not None and ts < open_entity[0]:
-            labels.append(label2id["I-" + open_entity[1]])
-            continue
-        open_entity = None
-        lab = label2id["O"]
-        for s, e, typ in doc["spans"]:
-            if ts <= s < te or s <= ts < e:
-                lab = label2id["B-" + typ]
-                open_entity = (e, typ)
+            lab = label2id["I-" + open_entity[1]]
+        else:
+            open_entity = None
+            lab = label2id["O"]
+            while span_idx < n_spans and spans[span_idx][1] <= ts:
+                span_idx += 1
+            for j in range(span_idx, n_spans):
+                s, e, typ = spans[j]
+                if s >= te:
+                    break
+                if ts <= s < te or s <= ts < e:
+                    lab = label2id["B-" + typ]
+                    open_entity = (e, typ)
+                    break
+        full_labels.append(lab)
+
+    cls_id = tokenizer.cls_token_id if tokenizer.cls_token_id is not None else tokenizer.bos_token_id
+    sep_id = tokenizer.sep_token_id if tokenizer.sep_token_id is not None else tokenizer.eos_token_id
+    prefix_ids = [cls_id] if cls_id is not None else []
+    suffix_ids = [sep_id] if sep_id is not None else []
+    prefix_len = len(prefix_ids)
+    suffix_len = len(suffix_ids)
+    content_len = max(1, max_length - prefix_len - suffix_len)
+    eff_stride = min(stride, content_len - 1) if content_len > 1 else 0
+    step = max(1, content_len - eff_stride)
+
+    n_tok = len(full_ids)
+    if n_tok == 0:
+        win_ranges = [(0, 0)]
+    else:
+        win_ranges = []
+        start = 0
+        while start < n_tok:
+            end = min(start + content_len, n_tok)
+            win_ranges.append((start, end))
+            if end == n_tok:
                 break
-        labels.append(lab)
-    enc["labels"] = labels
-    return enc
+            start += step
+
+    # Non-overlapping token-index ownership boundaries for evaluation
+    id2label_local = {v: k for k, v in label2id.items()}
+    tok_boundaries = []
+    for w in range(len(win_ranges) - 1):
+        ov_start = win_ranges[w + 1][0]
+        ov_end = win_ranges[w][1]
+        if ov_start < ov_end:
+            mid = (ov_start + ov_end) // 2
+            # Never split a multi-token gold entity across the evaluation boundary
+            while (
+                mid > ov_start
+                and full_labels[mid] != -100
+                and id2label_local[full_labels[mid]].startswith("I-")
+            ):
+                mid -= 1
+            tok_boundaries.append(mid)
+        else:
+            tok_boundaries.append(ov_end)
+
+    results = []
+    for w, (ws, we) in enumerate(win_ranges):
+        low_tok = tok_boundaries[w - 1] if w > 0 else 0
+        high_tok = tok_boundaries[w] if w < len(win_ranges) - 1 else n_tok
+
+        win_ids = prefix_ids + full_ids[ws:we] + suffix_ids
+        win_mask = [1] * len(win_ids)
+
+        content_labels = []
+        for t in range(ws, we):
+            if is_eval and not (low_tok <= t < high_tok):
+                content_labels.append(-100)
+            else:
+                content_labels.append(full_labels[t])
+
+        win_labels = ([-100] * prefix_len) + content_labels + ([-100] * suffix_len)
+        if is_eval and n_tok > 0 and all(l == -100 for l in win_labels):
+            continue
+
+        item = {
+            "input_ids": win_ids,
+            "attention_mask": win_mask,
+            "labels": win_labels,
+        }
+        results.append((item, doc_idx))
+
+    return results
+
+
+def encode_split(docs, tokenizer, max_length, stride, label2id, is_eval=False):
+    encodings = []
+    doc_ids = []
+    for doc_idx, doc in enumerate(docs):
+        for enc_item, d_id in encode_doc_windows(
+            doc, doc_idx, tokenizer, max_length, stride, label2id, is_eval=is_eval
+        ):
+            encodings.append(enc_item)
+            doc_ids.append(d_id)
+    return encodings, doc_ids
+
+
+def reconstruct_doc_sequences(lab, preds, doc_ids, id2label):
+    """Reconstruct one contiguous BIO tag sequence per document from sliding windows."""
+    true_by_doc = {}
+    pred_by_doc = {}
+    order = []
+    for row_idx, (t_row, p_row) in enumerate(zip(lab, preds)):
+        d_id = doc_ids[row_idx]
+        if d_id not in true_by_doc:
+            true_by_doc[d_id] = []
+            pred_by_doc[d_id] = []
+            order.append(d_id)
+        for ti, pi in zip(t_row, p_row):
+            if ti != -100:
+                true_by_doc[d_id].append(id2label[int(ti)])
+                pred_by_doc[d_id].append(id2label[int(pi)])
+    return [true_by_doc[d] for d in order], [pred_by_doc[d] for d in order]
 
 
 class TokenNERDataset(Dataset):
@@ -156,9 +275,15 @@ def parse_args():
     p.add_argument("--learning-rate", type=float, default=2e-5)
     p.add_argument("--weight-decay", type=float, default=0.01)
     p.add_argument("--max-length", type=int, default=512)
+    p.add_argument("--stride", type=int, default=128, help="Sliding-window subword overlap for long documents")
     p.add_argument("--output-dir", default="./checkpoints")
     p.add_argument("--results-csv", default="results/results_target_ner.csv")
     p.add_argument("--use-cpu", action="store_true")
+    p.add_argument(
+        "--cleanup-ckpt",
+        action="store_true",
+        help="Remove fine-tuned model checkpoint directory after logging test metrics",
+    )
     p.add_argument(
         "--subsample-train-fraction",
         type=float,
@@ -168,7 +293,7 @@ def parse_args():
     p.add_argument(
         "--split-file",
         default="auto",
-        help="JSON split file with train/val/test filenames ('auto' loads configs/splits/achs__seed42.json for dataset=achs when present; pass 'none' for random seed shuffle)",
+        help="JSON split file with train/val/test filenames ('auto' loads configs/splits/{achs,carmen_i}__seed42.json when present; pass 'none' for random seed shuffle)",
     )
     return p.parse_args()
 
@@ -188,9 +313,13 @@ def main():
         if not dirs and "/*/" in ann_pattern:
             dirs = glob.glob(ann_pattern.replace("/*/", "/"))
         if not dirs and "/carmen/" in ann_pattern:
-            carmen_fallback = os.path.expanduser("~/datasets/carmen/CARMEN-I/ann/masked/ner")
-            if os.path.isdir(carmen_fallback):
-                dirs = [carmen_fallback]
+            for cand_dir in (
+                os.path.expanduser("~/datasets/carmen/CARMEN-I/ann/masked/ner"),
+                os.path.expanduser("~/bruno/datasets/carmen/CARMEN-I/ann/masked/ner"),
+            ):
+                if os.path.isdir(cand_dir):
+                    dirs = [cand_dir]
+                    break
         if not dirs:
             raise FileNotFoundError(
                 f"BRAT annotations directory not found for '{args.dataset}': {ann_pattern}. "
@@ -210,11 +339,17 @@ def main():
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     split_path = None
     if args.split_file and args.split_file.lower() != "none":
-        if args.split_file == "auto" and args.dataset == "achs":
-            cand = os.path.join(repo_root, "configs", "splits", "achs__seed42.json")
-            if os.path.exists(cand):
-                split_path = cand
-        elif args.split_file != "auto":
+        if args.split_file == "auto":
+            split_name = None
+            if args.dataset == "achs":
+                split_name = "achs__seed42.json"
+            elif args.dataset in ("carmen_i", "carmen_i_ner", "carmen"):
+                split_name = "carmen_i__seed42.json"
+            if split_name:
+                cand = os.path.join(repo_root, "configs", "splits", split_name)
+                if os.path.exists(cand):
+                    split_path = cand
+        else:
             cand = os.path.expanduser(args.split_file)
             if not os.path.exists(cand):
                 raise FileNotFoundError(f"Split file specified via --split-file not found: {cand}")
@@ -229,7 +364,7 @@ def main():
         val_docs = [doc_by_name[name] for name in split_cfg.get("val", []) if name in doc_by_name]
         test_docs = [doc_by_name[name] for name in split_cfg.get("test", []) if name in doc_by_name]
         rng.shuffle(train_docs)
-        print(f"  [Split] Loaded quarantined split from {split_path}")
+        print(f"  [Split] Loaded fixed split from {split_path}")
     else:
         rng.shuffle(docs)
         n = len(docs)
@@ -248,9 +383,13 @@ def main():
     print(f"  Split: {len(train_docs)} train / {len(val_docs)} val / {len(test_docs)} test")
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
-    train_enc = [encode_doc(d, tokenizer, args.max_length, label2id) for d in train_docs]
-    val_enc = [encode_doc(d, tokenizer, args.max_length, label2id) for d in val_docs]
-    test_enc = [encode_doc(d, tokenizer, args.max_length, label2id) for d in test_docs]
+    train_enc, _ = encode_split(train_docs, tokenizer, args.max_length, args.stride, label2id, is_eval=False)
+    val_enc, val_doc_ids = encode_split(val_docs, tokenizer, args.max_length, args.stride, label2id, is_eval=True)
+    test_enc, test_doc_ids = encode_split(test_docs, tokenizer, args.max_length, args.stride, label2id, is_eval=True)
+    print(
+        f"  Windows (max_length={args.max_length}, stride={args.stride}): "
+        f"{len(train_enc)} train / {len(val_enc)} val / {len(test_enc)} test"
+    )
 
     train_ds = TokenNERDataset(train_enc)
     val_ds = TokenNERDataset(val_enc)
@@ -295,16 +434,13 @@ def main():
         log_level="passive",
     )
 
+    active_doc_ids = val_doc_ids
+
     def compute_metrics(eval_pred):
         logits, lab = eval_pred
         preds = np.argmax(logits, axis=-1)
-        true_y, pred_y = [], []
-        for t_row, p_row in zip(lab, preds):
-            for ti, pi in zip(t_row, p_row):
-                if ti != -100:
-                    true_y.append(id2label[ti])
-                    pred_y.append(id2label[pi])
-        return {"f1": ner_f1([true_y], [pred_y])}
+        true_seqs, pred_seqs = reconstruct_doc_sequences(lab, preds, active_doc_ids, id2label)
+        return {"f1": ner_f1(true_seqs, pred_seqs)}
 
     trainer = Trainer(
         model=model,
@@ -316,16 +452,12 @@ def main():
     )
     trainer.train()
 
+    active_doc_ids = test_doc_ids
     preds_out = trainer.predict(test_ds)
     logits, lab = preds_out.predictions, preds_out.label_ids
     preds = np.argmax(logits, axis=-1)
-    true_y, pred_y = [], []
-    for t_row, p_row in zip(lab, preds):
-        for ti, pi in zip(t_row, p_row):
-            if ti != -100:
-                true_y.append(id2label[ti])
-                pred_y.append(id2label[pi])
-    p, r, f1 = ner_p([true_y], [pred_y]), ner_r([true_y], [pred_y]), ner_f1([true_y], [pred_y])
+    true_seqs, pred_seqs = reconstruct_doc_sequences(lab, preds, test_doc_ids, id2label)
+    p, r, f1 = ner_p(true_seqs, pred_seqs), ner_r(true_seqs, pred_seqs), ner_f1(true_seqs, pred_seqs)
 
     print(f"\n{'='*60}")
     print(f"RESULT  model={args.base_model}  dataset={args.dataset}")
@@ -333,24 +465,31 @@ def main():
     print(f"  Checkpoint saved at: {ckpt_dir}")
     print(f"{'='*60}\n")
 
-    os.makedirs(ckpt_dir, exist_ok=True)
-    with open(os.path.join(ckpt_dir, "train_metadata.json"), "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "base_model": args.base_model,
-                "dataset": args.dataset,
-                "ann_dir": ann_dir,
-                "seed": args.seed,
-                "epochs": args.epochs,
-                "n_train": len(train_docs),
-                "n_val": len(val_docs),
-                "n_test": len(test_docs),
-                "entity_types": types,
-                "test_f1": f1,
-            },
-            f,
-            indent=2,
-        )
+    if args.cleanup_ckpt:
+        shutil.rmtree(ckpt_dir, ignore_errors=True)
+        print(f"  [Cleanup] Removed disposable checkpoint dir: {ckpt_dir}")
+    else:
+        os.makedirs(ckpt_dir, exist_ok=True)
+        with open(os.path.join(ckpt_dir, "train_metadata.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "base_model": args.base_model,
+                    "dataset": args.dataset,
+                    "ann_dir": ann_dir,
+                    "split_file": split_path,
+                    "seed": args.seed,
+                    "epochs": args.epochs,
+                    "max_length": args.max_length,
+                    "stride": args.stride,
+                    "n_train": len(train_docs),
+                    "n_val": len(val_docs),
+                    "n_test": len(test_docs),
+                    "entity_types": types,
+                    "test_f1": f1,
+                },
+                f,
+                indent=2,
+            )
 
     out_dir = os.path.dirname(os.path.abspath(args.results_csv))
     if out_dir:

@@ -37,54 +37,64 @@ plt.rcParams.update({
 })
 
 # Canonical manuscript multi-seed benchmark scores (Seeds 42, 123, 2024; Table 2 & Appendix B)
+# Evaluated with exact CRLF-preserving BRAT offsets, sliding-window full-document reconstruction,
+# fixed CARMEN-I split (400/50/50), and zero-leakage quarantined ACHS val/test split (1429/179/179).
 PAPER_MULTISEED = {
     "RigoBERTa-Clinical": {
-        "achs": np.array([0.3630, 0.3901, 0.3918]),
-        "carmen_i": np.array([0.7407, 0.7258, 0.7402]),
+        "achs": np.array([0.7840, 0.7783, 0.7841]),
+        "carmen_i": np.array([0.7617, 0.7591, 0.7442]),
     },
     "Control (XLM-R Large)": {
-        "achs": np.array([0.3824, 0.3898, 0.4063]),
-        "carmen_i": np.array([0.7125, 0.7383, 0.7240]),
+        "achs": np.array([0.7768, 0.7646, 0.7638]),
+        "carmen_i": np.array([0.7525, 0.7682, 0.7581]),
     },
     "CLIN-X-ES": {
-        "achs": np.array([0.3882, 0.3743, 0.4259]),
-        "carmen_i": np.array([0.7355, 0.7162, 0.7411]),
+        "achs": np.array([0.7721, 0.7708, 0.7742]),
+        "carmen_i": np.array([0.7798, 0.7729, 0.7717]),
+    },
+    "CoWeSe Baseline": {
+        "achs": np.array([0.7802, 0.7833, 0.7886]),
+        "carmen_i": np.array([0.7769, 0.7684, 0.7680]),
     },
     "Real Seeds Control": {
-        "achs": np.array([0.4102, 0.3642, 0.3991]),
-        "carmen_i": np.array([0.7460, 0.7239, 0.7317]),
+        "achs": np.array([0.7708, 0.7908, 0.7871]),
+        "carmen_i": np.array([0.7575, 0.7599, 0.7630]),
     },
     "8B (N=1)": {
-        "achs": np.array([0.4007, 0.3899, 0.3723]),
-        "carmen_i": np.array([0.7256, 0.7430, 0.7421]),
+        "achs": np.array([0.7818, 0.7697, 0.7816]),
+        "carmen_i": np.array([0.7722, 0.7764, 0.7714]),
     },
     "8B (N=5)": {
-        "achs": np.array([0.3891, 0.3965, 0.3882]),
-        "carmen_i": np.array([0.7360, 0.7493, 0.7329]),
+        "achs": np.array([0.7792, 0.7806, 0.7807]),
+        "carmen_i": np.array([0.7702, 0.7790, 0.7644]),
     },
     "Flagship 8B (N=10)": {
-        "achs": np.array([0.3940, 0.3981, 0.3676]),
-        "carmen_i": np.array([0.7545, 0.7508, 0.7614]),
+        "achs": np.array([0.7713, 0.7815, 0.7892]),
+        "carmen_i": np.array([0.7757, 0.7691, 0.7836]),
     },
     "27B (N=1)": {
-        "achs": np.array([0.3654, 0.3810, 0.3654]),
-        "carmen_i": np.array([0.7373, 0.7657, 0.7500]),
+        "achs": np.array([0.7857, 0.7809, 0.7841]),
+        "carmen_i": np.array([0.7611, 0.7617, 0.7750]),
     },
     "27B (N=5)": {
-        "achs": np.array([0.3913, 0.3921, 0.3920]),
-        "carmen_i": np.array([0.7335, 0.7560, 0.7680]),
+        "achs": np.array([0.7833, 0.7809, 0.7781]),
+        "carmen_i": np.array([0.7822, 0.7797, 0.7720]),
+    },
+    "Pure-Synth 27B": {
+        "achs": np.array([0.7689, 0.7759, 0.7856]),
+        "carmen_i": np.array([0.7767, 0.7724, 0.7768]),
     },
     "Flagship 27B (N=10)": {
-        "achs": np.array([0.3934, 0.4057, 0.4154]),
-        "carmen_i": np.array([0.7677, 0.7588, 0.7693]),
+        "achs": np.array([0.7815, 0.7826, 0.7849]),
+        "carmen_i": np.array([0.7835, 0.7719, 0.7837]),
     },
 }
 
 PAPER_SAMPLE_EFFICIENCY = {
     "frac_pct": [10, 25, 50, 100],
-    "ctrl": [0.1256, 0.2063, 0.3098, 0.3824],
-    "rigo": [0.1456, 0.2183, 0.2861, 0.3630],
-    "flagship": [0.1570, 0.2124, 0.2865, 0.3934],
+    "ctrl": [0.6411, 0.6869, 0.7339, 0.7768],
+    "rigo": [0.6801, 0.7050, 0.7497, 0.7840],
+    "flagship": [0.6552, 0.7173, 0.7679, 0.7815],
 }
 
 
@@ -268,9 +278,12 @@ def main():
     planned_contrasts.sort(key=lambda x: x[2])
     report_lines.append("Holm-Bonferroni Step-Down Procedure (6 primary contrasts, alpha=0.05):")
     print("\nHolm-Bonferroni Step-Down (6 primary contrasts, alpha=0.05):")
+    prev_pass = True
     for rank, (ds_name, base_name, p_val) in enumerate(planned_contrasts, start=1):
         alpha_corr = 0.05 / (len(planned_contrasts) - rank + 1)
-        survives = "PASS" if p_val < alpha_corr else "NO"
+        passed = prev_pass and (p_val < alpha_corr)
+        prev_pass = passed
+        survives = "PASS" if passed else "NO"
         hb_line = f"  [{rank}] {ds_name} | 27B vs {base_name:<22s} | p={p_val:.4f} vs alpha_adj={alpha_corr:.4f} -> {survives}"
         print(hb_line)
         report_lines.append(hb_line)
@@ -337,17 +350,19 @@ def main():
     for idx, ds in enumerate(["achs", "carmen_i"]):
         ax = axes[idx]
         means = [np.mean(data_multiseed[m][ds]) for m in models_order]
-        stds = [np.std(data_multiseed[m][ds]) for m in models_order]
+        stds = [np.std(data_multiseed[m][ds], ddof=1) for m in models_order]
         peaks = [np.max(data_multiseed[m][ds]) for m in models_order]
 
         x = np.arange(len(models_order))
         bars = ax.bar(x, means, yerr=stds, capsize=4, color=colors, edgecolor="black", linewidth=0.8, alpha=0.9)
         ax.scatter(x, peaks, color="darkred", marker="D", s=30, zorder=5, label="Peak $F_1$")
 
+        ymin = min(min(means) - 0.035, 0.72)
+        ymax = max(max(peaks) + 0.018, 0.805)
         for bar, mean_val in zip(bars, means):
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
-                bar.get_height() - 0.035,
+                bar.get_height() - 0.012,
                 f"{mean_val:.4f}",
                 ha="center",
                 va="top",
@@ -372,11 +387,9 @@ def main():
             ha="right",
         )
         ax.grid(axis="y", linestyle="--", alpha=0.5)
+        ax.set_ylim(ymin, ymax)
         if idx == 0:
-            ax.set_ylim(0.32, 0.435)
             ax.legend(loc="upper left")
-        else:
-            ax.set_ylim(0.68, 0.795)
 
     plt.tight_layout()
     fig.savefig(os.path.join(args.fig_dir, "fig2_head_to_head_baselines.pdf"))
@@ -400,21 +413,22 @@ def main():
     ax.plot(frac_pct, flagship_f1, marker="s", markersize=7, linewidth=2.7, linestyle="-", color="#d95f02", label="Flagship 27B (N=10, Ours)")
 
     label_bbox = dict(boxstyle="round,pad=0.18", facecolor="white", edgecolor="none", alpha=0.90)
-    ax.annotate(f"{flagship_f1[0]:.4f}", (10, flagship_f1[0]), textcoords="offset points", xytext=(8, 9), ha="left", fontweight="bold", color="#d95f02", fontsize=10, bbox=label_bbox)
-    ax.annotate(f"{rigo_f1[0]:.4f}", (10, rigo_f1[0]), textcoords="offset points", xytext=(-8, -3), ha="right", fontweight="bold", color="#7570b3", fontsize=10, bbox=label_bbox)
-    ax.annotate(f"{ctrl_f1[0]:.4f}", (10, ctrl_f1[0]), textcoords="offset points", xytext=(8, -14), ha="left", color="#555555", fontsize=10, bbox=label_bbox)
-    ax.annotate(f"{flagship_f1[-1]:.4f} (Seed 42)", (100, flagship_f1[-1]), textcoords="offset points", xytext=(-8, 9), ha="right", fontweight="bold", color="#d95f02", fontsize=10, bbox=label_bbox)
-    ax.annotate(f"{rigo_f1[-1]:.4f}", (100, rigo_f1[-1]), textcoords="offset points", xytext=(-8, -16), ha="right", fontweight="bold", color="#7570b3", fontsize=10, bbox=label_bbox)
+    ax.annotate(f"{rigo_f1[0]:.4f}", (10, rigo_f1[0]), textcoords="offset points", xytext=(8, 7), ha="left", fontweight="bold", color="#7570b3", fontsize=9.5, bbox=label_bbox)
+    ax.annotate(f"{flagship_f1[0]:.4f}", (10, flagship_f1[0]), textcoords="offset points", xytext=(8, -2), ha="left", fontweight="bold", color="#d95f02", fontsize=9.5, bbox=label_bbox)
+    ax.annotate(f"{ctrl_f1[0]:.4f}", (10, ctrl_f1[0]), textcoords="offset points", xytext=(8, -14), ha="left", color="#555555", fontsize=9.5, bbox=label_bbox)
+    ax.annotate(f"{flagship_f1[2]:.4f}", (50, flagship_f1[2]), textcoords="offset points", xytext=(0, 10), ha="center", fontweight="bold", color="#d95f02", fontsize=9.5, bbox=label_bbox)
+    ax.annotate(f"{flagship_f1[-1]:.4f}", (100, flagship_f1[-1]), textcoords="offset points", xytext=(-6, -15), ha="right", fontweight="bold", color="#d95f02", fontsize=9.5, bbox=label_bbox)
+    ax.annotate(f"{rigo_f1[-1]:.4f}", (100, rigo_f1[-1]), textcoords="offset points", xytext=(-6, 8), ha="right", fontweight="bold", color="#7570b3", fontsize=9.5, bbox=label_bbox)
 
     ax.set_title("Sample Efficiency & Annotation Scaling Curve (ACHS NER)", fontweight="bold", pad=12)
     ax.set_xlabel("Percentage of Labeled Real Training Data Available (%)", labelpad=8)
     ax.set_ylabel(r"Test $F_1$-score on Full Evaluation Split", labelpad=8)
     ax.set_xticks(frac_pct)
     ax.set_xticklabels(["10%\n(142 docs)", "25%\n(357 docs)", "50%\n(714 docs)", "100%\n(1,429 docs)"])
-    ax.set_xlim(0, 106)
-    ax.set_ylim(0.08, 0.44)
+    ax.set_xlim(4, 106)
+    ax.set_ylim(0.60, 0.815)
     ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend(frameon=True, framealpha=0.95, loc="upper left")
+    ax.legend(frameon=True, framealpha=0.95, loc="lower right")
 
     plt.tight_layout()
     fig.savefig(os.path.join(args.fig_dir, "fig6_sample_efficiency_curve.pdf"))

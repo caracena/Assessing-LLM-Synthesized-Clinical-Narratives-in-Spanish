@@ -35,7 +35,8 @@ Assessing-LLM-Synthesized-Clinical-Narratives-in-Spanish/
 │   │   ├── achs_pseudo__train_only.json   # Leak-free train-only seed IDs for ACHS
 │   │   └── achs_pseudo_to_masked_mapping.json # Mapping between ACHS pseudo and BRAT IDs
 │   └── splits/
-│       └── achs__seed42.json              # Reproducible 80/10/10 ACHS benchmark split IDs
+│       ├── achs__seed42.json              # Leak-free quarantined 80/10/10 ACHS split IDs
+│       └── carmen_i__seed42.json          # Fixed 80/10/10 CARMEN-I benchmark split IDs
 └── scripts/
     ├── dataset_registry.py                # Dataset catalog & train-only seed extraction
     ├── corpus_normalizer.py               # Corpus normalization helper
@@ -111,9 +112,9 @@ Three restricted institutional corpora are registered in `configs/dataset_regist
 
 | Registry Key | Pipeline Role | Source / Citation | Local Path | Volume, Split & Anti-Leakage Quarantine |
 | :--- | :--- | :--- | :--- | :--- |
-| **`achs_pseudo`** | **Generation seeds** (Steps 1–2 only) | Aracena et al. (*ClinicalNLP@NAACL 2024*) | `~/datasets/ACHS_pseudo` | `2,869` de-identified plain-text reports (`1,486` `admission_*` + `1,383` `medical_*`). Because `122` `medical_*` notes map to the BRAT benchmark (`configs/seeds/achs_pseudo_to_masked_mapping.json`), `22` notes falling in downstream `val`/`test` splits are excluded via `configs/seeds/achs_pseudo__train_only.json` (`2,847` train-only files), and text normalization removes `6` empty/ultra-short notes → **`2,841` active normalized seeds**. Generates `28,376` (`27B`, `28,374` deduplicated) and `26,716` (`8B`, `26,714` deduplicated) synthetic notes at `N=10`, plus `2,816` authentic seeds (`>= 15` words) in the Appendix B control. |
-| **`achs`** | **Downstream NER benchmark** (Step 4 only) | Dunstan et al. (*BMC Med. Inform. Decis. Mak. 2024*) | `~/datasets/achs/masked_achs-privacy_corpus` | **`1,787` BRAT-annotated anamneses** (`.txt` + `.ann` across `Body_Part`, `Disease`, `Medication`, `First_Name`), evaluated strictly in Step 4 (`finetune_eval.py --dataset achs`) using the reproducible 80/10/10 split `configs/splits/achs__seed42.json` (**`1,429` train / `179` val / `179` test**) across 3 seeds and `10%–100%` sample efficiency curves. |
-| **`carmen_i`** | **Unseen external NER benchmark** (Step 4 only) | Lima-López et al. (2025), via [PhysioNet](https://physionet.org/) | `~/datasets/carmen/CARMEN-I/ann/masked/ner` | **`500` BRAT-annotated hospital EHR records** (`400` train / `50` val / `50` test per seed across 6 entity types; pass `--data-dir` to `finetune_eval.py` if unpacked inside a versioned PhysioNet directory). Completely excluded from seed generation and continual pre-training (`0` seeds). |
+| **`achs_pseudo`** | **Generation seeds** (Steps 1–2 only) | Aracena et al. (*ClinicalNLP@NAACL 2024*) | `~/datasets/ACHS_pseudo` | `2,869` de-identified plain-text reports (`1,486` `admission_*` + `1,383` `medical_*`). Filtered to `2,847` train-only seeds via `configs/seeds/achs_pseudo__train_only.json` (`2,841` active normalized seeds after removing `6` empty/ultra-short files), yielding `28,376` (`27B`, `28,374` deduplicated) and `26,716` (`8B`, `26,714` deduplicated) synthetic notes at `N=10`, plus `2,816` authentic seeds (`>= 15` words) in the Appendix B control. All `740` cross-corpus `ACHS_pseudo`–BRAT matches are catalogued in `configs/seeds/achs_pseudo_to_masked_mapping.json`. |
+| **`achs`** | **Downstream NER benchmark** (Step 4 only) | Dunstan et al. (*BMC Med. Inform. Decis. Mak. 2024*) | `~/datasets/achs/masked_achs-privacy_corpus` | **`1,787` BRAT-annotated anamneses** (`.txt` + `.ann` across `Body_Part`, `Disease`, `Medication`, `First_Name`), evaluated strictly in Step 4 (`finetune_eval.py --dataset achs`) using the quarantined 80/10/10 split `configs/splits/achs__seed42.json` (**`1,429` train / `179` val / `179` test**). To guarantee `0%` leakage from generation seeds, all `742` BRAT notes overlapping `ACHS_pseudo` are restricted to `train`, and `val`/`test` are drawn exclusively from the `1,045` non-overlapping records. |
+| **`carmen_i`** | **Unseen external NER benchmark** (Step 4 only) | Lima-López et al. (2025), via [PhysioNet](https://physionet.org/) | `~/datasets/carmen/CARMEN-I/ann/masked/ner` | **`500` BRAT-annotated hospital EHR records** evaluated under the fixed 80/10/10 split `configs/splits/carmen_i__seed42.json` (**`400` train / `50` val / `50` test** across 6 entity types; pass `--data-dir` to `finetune_eval.py` if unpacked inside a versioned PhysioNet directory). Completely excluded from seed generation and continual pre-training (`0` seeds). |
 
 When `~/datasets/ACHS_pseudo` is available locally, materialize the quarantined train-only generation seeds (`2,847` files) before running `normalize_corpora.py`:
 
@@ -290,7 +291,7 @@ Or run each block individually:
 
 ### 4.1 Target Clinical NER Benchmarks (`ACHS`, `CARMEN-I` — Multi-Seed `42, 123, 2024`)
 
-*(Note: On `--dataset achs`, `finetune_eval.py` defaults to `--split-file auto`, loading the fixed leak-free holdout in `configs/splits/achs__seed42.json` so `val`/`test` stay strictly quarantined across random seeds; pass `--split-file none` for per-seed shuffling. All downstream scripts write to a unified 12-column CSV schema.)*
+*(Note: `finetune_eval.py` preserves exact CRLF BRAT character offsets (`newline=""`), applies sliding-window tokenization (`--max-length 512 --stride 128`) with non-overlapping document-level BIO reconstruction so long EHR narratives are never truncated, and defaults to `--split-file auto`, loading the fixed splits in `configs/splits/achs__seed42.json` and `configs/splits/carmen_i__seed42.json` across seeds. All downstream scripts write to a unified 12-column CSV schema.)*
 
 ```bash
 for DATASET in carmen_i achs; do

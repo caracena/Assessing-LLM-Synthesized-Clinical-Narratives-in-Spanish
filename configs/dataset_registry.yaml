@@ -6,7 +6,7 @@ datasets:
   carmen_i:
     format: brat
     path: ~/datasets/carmen/CARMEN-I/ann/masked/ner
-    split: {mode: auto, seed: 42}
+    split: {mode: auto, seed: 42, file: configs/splits/carmen_i__seed42.json}
     evaluation: {task: ner}
     generation: {seed_policy: excluded}
 
